@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 40 40" fill="none">
+                        <!-- Mimicking Adobe PDF logo -->
+                        <path d="M5 8C5 6.34315 6.34315 5 8 5H32C33.6569 5 35 6.34315 35 8V32C35 33.6569 33.6569 35 32 35H8C6.34315 35 5 33.6569 5 32V8Z" fill="#FF0000"/>
+                        <path d="M23.1 27.6C22.6 28.5 22 29.5 21.4 30.5C21.1 30.2 20 29.3 18.6 28.2C17.7 28.4 16.7 28.6 15.6 28.7C14.1 28.8 12.8 28.6 12 28.1C11.5 27.8 11.2 27.3 11.2 26.7C11.2 25.8 11.8 24.8 13.2 23.9C14.7 22.9 17 22 20 21.3C20.6 19.3 21.2 17 21.6 15.1C21.2 13.5 21 12 21 11.2C21 10.4 21.2 9.8 21.6 9.4C22.1 8.9 22.8 8.8 23.4 8.8C24.1 8.8 24.6 9 24.9 9.5C25.2 10 25.3 10.7 25.3 11.5C25.3 13.4 24.6 15.9 23.5 18.8C24.8 19.8 26.3 20.7 27.9 21.3C29.6 22.1 31.2 22.6 32.5 22.6C33.3 22.6 33.8 22.4 34 22.1C34.3 21.8 34.3 21.4 34.2 20.9V20.8H34.3C34.3 20.8 34.4 20.9 34.5 21.1C34.7 21.8 34.7 22.7 34.3 23.4C33.8 24.5 32.2 24.9 29.9 24.9C27.5 24.9 25.1 24.2 23.1 23.1C22.6 24.5 22 26.1 21.5 27.6H23.1V27.6ZM13.8 25.3C13.2 25.7 13 26.1 13 26.3C13 26.5 13.1 26.7 13.3 26.8C13.8 27.1 14.7 27.1 15.8 27C17.2 26.8 18.5 26.5 19.6 26.1C17.2 26.4 15.2 26 13.8 25.3ZM23.3 10.4C23.1 10.4 22.9 10.5 22.8 10.8C22.6 11.3 22.7 12.3 23.1 13.7C23.4 12.4 23.5 11.3 23.5 10.8C23.5 10.5 23.4 10.4 23.3 10.4ZM23 21.2C24.1 22.1 25.3 22.8 26.4 23.3C27.7 23.8 28.8 24.1 29.7 24.1C30.6 24.1 31.2 23.9 31.4 23.7C31.5 23.6 31.5 23.4 31.4 23.3C31 23.1 30.1 22.8 28.7 22.2C27.3 21.7 25.5 20.8 23 19.7C22.4 20.2 22 20.6 21.5 21C22.1 21.1 22.5 21.2 23 21.2Z" fill="white"/>
+                    </svg>
+                </div>
+                <div class="logo-text"><h1>PDF Pro</h1></div>
+            </div>
+            <div class="header-nav">
+                <a href="#" class="nav-link active" id="navHome">Home</a>
+                <a href="#" class="nav-link" id="navTools">Tools</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- HOME VIEW -->
+        <div id="homeView" style="display:block; animation: toastIn 0.4s ease;">
+            <div style="background:var(--bg-card); padding:80px 40px; border-radius:var(--r-md); border:1px solid var(--border); text-align:center; margin-bottom:40px; box-shadow:0 2px 10px rgba(0,0,0,0.02);">
+                <h2 style="font-size:2.8rem; font-weight:300; margin-bottom:16px;">Welcome to PDF Pro</h2>
+                <p style="font-size:1.1rem; color:var(--text-secondary); margin-bottom:32px;">Your 100% free, local, and private PDF editing suite.</p>
+                <button class="btn-primary" id="btnExploreTools" style="margin-top:0;">Explore All Tools</button>
+            </div>
+            <h3 style="font-size:1.2rem; font-weight:600; margin-bottom:16px;">Recent Files</h3>
+            <div style="background:var(--bg-card); padding:60px 40px; border-radius:var(--r-md); border:1px dashed #C0C0C0; text-align:center; color:var(--text-muted);">
+                <span style="font-size:2.5rem; display:block; margin-bottom:12px;">📂</span>
+                <p>No recent files. Files processed locally will not be stored permanently.</p>
+            </div>
+        </div>
+
+        <!-- TOOLS VIEW -->
+        <div id="toolsView" style="display:none; animation: toastIn 0.4s ease;">
+            <div class="page-title">
+                <h2>All tools</h2>
+            </div>
+
+        <!-- Category Tabs (Styled as simple sub-nav) -->
+                <div class="category-bar" id="categoryBar" style="flex-wrap:wrap; margin-bottom: 30px;">
+            <button class="cat-tab active" data-cat="all">All</button>
+            <button class="cat-tab" data-cat="organize">Organize</button>
+            <button class="cat-tab" data-cat="optimize">Optimize</button>
+            <button class="cat-tab" data-cat="to-pdf">Convert to PDF</button>
+            <button class="cat-tab" data-cat="from-pdf">Convert from PDF</button>
+            <button class="cat-tab" data-cat="edit">Edit</button>
+            <button class="cat-tab" data-cat="security">Security</button>
+            <button class="cat-tab" data-cat="intelligence">Intelligence</button>
+        </div>
+
+        <!-- Tool Grids per Category -->
+                        <div class="tool-grid-container">
+            <div class="tool-grid active" id="mainGrid">
+                <!-- Organize -->
+                <button class="tool-card" data-category="organize" data-tool="merge"><span class="tc-icon">➕</span><div class="tc-text"><span class="tc-name">Merge PDF</span><span class="tc-desc">Combine multiple PDFs</span></div></button>
+                <button class="tool-card" data-category="organize" data-tool="split"><span class="tc-icon">✂️</span><div class="tc-text"><span class="tc-name">Split PDF</span><span class="tc-desc">Separate into individual pages</span></div></button>
+                <button class="tool-card" data-category="organize" data-tool="delete-pages"><span class="tc-icon">🗑️</span><div class="tc-text"><span class="tc-name">Remove pages</span><span class="tc-desc">Delete specific pages</span></div></button>
+                <button class="tool-card" data-category="organize" data-tool="extract-pages"><span class="tc-icon">📤</span><div class="tc-text"><span class="tc-name">Extract pages</span><span class="tc-desc">Pull specific pages out</span></div></button>
+                <button class="tool-card" data-category="organize" data-tool="reorder"><span class="tc-icon">🔄</span><div class="tc-text"><span class="tc-name">Organize PDF</span><span class="tc-desc">Sort or arrange pages</span></div></button>
+                <button class="tool-card" data-category="organize" data-tool="scan"><span class="tc-icon">📱</span><div class="tc-text"><span class="tc-name">Scan to PDF</span><span class="tc-desc">Capture using webcam</span></div></button>
+                
+                <!-- Optimize -->
+                <button class="tool-card" data-category="optimize" data-tool="compress"><span class="tc-icon">📉</span><div class="tc-text"><span class="tc-name">Compress PDF</span><span class="tc-desc">Reduce file size securely</span></div></button>
+                <button class="tool-card" data-category="optimize" data-tool="repair"><span class="tc-icon">🛠️</span><div class="tc-text"><span class="tc-name">Repair PDF</span><span class="tc-desc">Fix corrupted documents</span></div></button>
+
+                <!-- Convert to PDF -->
+                <button class="tool-card" data-category="to-pdf" data-tool="img-to-pdf"><span class="tc-icon">🖼️</span><div class="tc-text"><span class="tc-name">JPG to PDF</span><span class="tc-desc">Images to PDF format</span></div></button>
+                <button class="tool-card" data-category="to-pdf" data-tool="word-to-pdf"><span class="tc-icon">📝</span><div class="tc-text"><span class="tc-name">Word to PDF</span><span class="tc-desc">DOC/DOCX to PDF</span></div></button>
+                <button class="tool-card" data-category="to-pdf" data-tool="pptx-to-pdf"><span class="tc-icon">📊</span><div class="tc-text"><span class="tc-name">PowerPoint to PDF</span><span class="tc-desc">PPT/PPTX to PDF</span></div></button>
+                <button class="tool-card" data-category="to-pdf" data-tool="excel-to-pdf"><span class="tc-icon">📈</span><div class="tc-text"><span class="tc-name">Excel to PDF</span><span class="tc-desc">XLS/XLSX to PDF</span></div></button>
+                <button class="tool-card" data-category="to-pdf" data-tool="html-to-pdf"><span class="tc-icon">🌐</span><div class="tc-text"><span class="tc-name">HTML to PDF</span><span class="tc-desc">Webpage or code to PDF</span></div></button>
+
+                <!-- Convert from PDF -->
+                <button class="tool-card" data-category="from-pdf" data-tool="pdf-to-img"><span class="tc-icon">📸</span><div class="tc-text"><span class="tc-name">PDF to JPG</span><span class="tc-desc">Extract images from PDF</span></div></button>
+                <button class="tool-card" data-category="from-pdf" data-tool="pdf-to-word"><span class="tc-icon">📝</span><div class="tc-text"><span class="tc-name">PDF to Word</span><span class="tc-desc">Convert to editable Word</span></div></button>
+                <button class="tool-card" data-category="from-pdf" data-tool="pdf-to-pptx"><span class="tc-icon">📊</span><div class="tc-text"><span class="tc-name">PDF to PowerPoint</span><span class="tc-desc">Convert to editable PPT</span></div></button>
+                <button class="tool-card" data-category="from-pdf" data-tool="pdf-to-excel"><span class="tc-icon">📈</span><div class="tc-text"><span class="tc-name">PDF to Excel</span><span class="tc-desc">Convert to spreadsheet</span></div></button>
+                <button class="tool-card" data-category="from-pdf" data-tool="pdf-to-pdfa"><span class="tc-icon">🏛️</span><div class="tc-text"><span class="tc-name">PDF to PDF/A</span><span class="tc-desc">Convert for archiving</span></div></button>
+
+                <!-- Edit -->
+                <button class="tool-card" data-category="edit" data-tool="edit-pdf"><span class="tc-icon">✏️</span><div class="tc-text"><span class="tc-name">Edit PDF</span><span class="tc-desc">Add text, images, shapes</span></div></button>
+                <button class="tool-card" data-category="edit" data-tool="crop"><span class="tc-icon">✂️</span><div class="tc-text"><span class="tc-name">Crop PDF</span><span class="tc-desc">Trim page margins</span></div></button>
+                <button class="tool-card" data-category="edit" data-tool="page-numbers"><span class="tc-icon">123</span><div class="tc-text"><span class="tc-name">Page Numbers</span><span class="tc-desc">Add page numbers</span></div></button>
+                <button class="tool-card" data-category="edit" data-tool="watermark"><span class="tc-icon">©️</span><div class="tc-text"><span class="tc-name">Add Watermark</span><span class="tc-desc">Apply text watermark</span></div></button>
+                <button class="tool-card" data-category="edit" data-tool="rotate"><span class="tc-icon">🔁</span><div class="tc-text"><span class="tc-name">Rotate PDF</span><span class="tc-desc">Rotate pages easily</span></div></button>
+
+                <!-- Security -->
+                <button class="tool-card" data-category="security" data-tool="unlock"><span class="tc-icon">🔓</span><div class="tc-text"><span class="tc-name">Unlock PDF</span><span class="tc-desc">Remove passwords</span></div></button>
+                <button class="tool-card" data-category="security" data-tool="protect"><span class="tc-icon">🔒</span><div class="tc-text"><span class="tc-name">Protect PDF</span><span class="tc-desc">Add password encryption</span></div></button>
+                <button class="tool-card" data-category="security" data-tool="sign"><span class="tc-icon">✍️</span><div class="tc-text"><span class="tc-name">Sign PDF</span><span class="tc-desc">Add your signature</span></div></button>
+                <button class="tool-card" data-category="security" data-tool="redact"><span class="tc-icon">⬛</span><div class="tc-text"><span class="tc-name">Redact PDF</span><span class="tc-desc">Permanent blackout</span></div></button>
+
+                <!-- Intelligence -->
+                <button class="tool-card" data-category="intelligence" data-tool="ocr"><span class="tc-icon">👁️</span><div class="tc-text"><span class="tc-name">OCR PDF</span><span class="tc-desc">Make text searchable</span></div></button>
+                <button class="tool-card" data-category="intelligence" data-tool="compare"><span class="tc-icon">⚖️</span><div class="tc-text"><span class="tc-name">Compare PDF</span><span class="tc-desc">Find document differences</span></div></button>
+                <button class="tool-card" data-category="intelligence" data-tool="summarize"><span class="tc-icon">🧠</span><div class="tc-text"><span class="tc-name">AI Summarizer</span><span class="tc-desc">Extract key points</span></div></button>
+                <button class="tool-card" data-category="intelligence" data-tool="translate"><span class="tc-icon">🌍</span><div class="tc-text"><span class="tc-name">Translate PDF</span><span class="tc-desc">Translate document language</span></div></button>
+            </div>
+        </div>
+        </div>
+
+<!-- WORKSPACE VIEW -->
+        <div id="workspace" style="display:none; animation: toastIn 0.3s ease;">
+            <button class="btn-ghost" id="backBtn" style="margin-bottom:20px;">← Back to tools</button>
+            <div id="toolWorkspace" style="background:var(--bg-card); padding:30px; border-radius:var(--r-md); border:1px solid var(--border); margin-bottom:24px; box-shadow:0 4px 20px rgba(0,0,0,0.05);">
+                <!-- Tool UI injected here -->
+            </div>
+
+
+            <div id="resultArea" style="display:none; margin-top:30px; animation: toastIn 0.3s ease;">
+                <div style="background:var(--bg-card); padding:40px; border-radius:var(--r-md); border:1px solid var(--success); text-align:center;">
+                    <h3 id="resultTitle" style="color:var(--success); margin-bottom:20px; font-size:1.8rem;">Task Completed</h3>
+                    <div id="resultBody" style="display:flex; flex-direction:column; gap:12px; max-width:500px; margin:0 auto 24px;"></div>
+                    <button class="btn-primary" id="btnDownloadAll">Download All</button>
+                </div>
+            </div>
+        </div>
+        </div>
+        
+        <!-- SPLIT WORKSPACE FOR AI TOOLS -->
+        <div id="splitWorkspace" style="display:none; height: 80vh; margin-top:20px; border-radius:var(--r-md); overflow:hidden; border:1px solid var(--border); background:#fff;">
+            <div style="display:flex; height:100%;">
+                <div id="splitLeft" style="flex:1; border-right:1px solid var(--border); background:#f8f9fa;">
+                    <iframe id="splitIframe" src="" style="width:100%; height:100%; border:none;"></iframe>
+                </div>
+                <div id="splitRight" style="flex:1; display:flex; flex-direction:column; background:#fff;">
+                    <div style="padding:20px; border-bottom:1px solid var(--border); background:#fbfbfb; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 id="splitTitle" style="margin:0; font-size:1.4rem; color:var(--primary);">AI Summarize</h3>
+                        <button class="btn-ghost" id="splitBackBtn" style="padding:5px 10px; font-size:0.9rem;">✕ Close</button>
+                    </div>
+                    <div id="splitContent" style="flex:1; padding:20px; overflow-y:auto; line-height:1.6; font-size:0.95rem;">
+                        <div style="text-align:center; margin-top:20px; color:var(--text-muted);">
+                            <div class="spinner" style="margin:0 auto 15px;"></div>
+                            <p>Analyzing document...</p>
+                        </div>
+                    </div>
+                    <div style="padding:15px; border-top:1px solid var(--border); background:#fff;">
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="splitChatInput" placeholder="Ask anything about the document..." style="flex:1; padding:12px; border-radius:20px; border:1px solid var(--border); outline:none;">
+                            <button class="btn-primary" id="splitChatSend" style="border-radius:20px; padding:0 20px;">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+</main>
+
+    <div class="progress-overlay" id="progressOverlay" style="display:none;">
+        <div class="spinner"></div>
+        <h2 id="progressTitle" style="margin-bottom:10px;">Processing...</h2>
+        <p id="progressDesc" style="color:var(--text-muted);">This may take a moment</p>
+    </div>
+    
+    <div class="toast-container" id="toastContainer"></div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
