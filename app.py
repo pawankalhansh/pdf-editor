@@ -256,11 +256,63 @@ def api_extract_text_blocks():
                         'fontSize': round(font_size, 1),
                         'font': font_name,
                         'color': color_hex,
-                        'origin_y': span.get("origin", [0, bbox[1]])[1] if "origin" in span else bbox[1]
+                        'origin_y': span.get("origin", [0, bbox[1]])[1] if "origin" in span else bbox[1],
+                        'bbox': [bbox[0], bbox[1], bbox[2], bbox[3]]
                     })
         
         doc.close()
         return jsonify({'blocks': blocks, 'page': page_num})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pdf-to-markdown', methods=['POST'])
+def api_pdf_to_markdown():
+    data = request.json
+    filename = data.get('filename')
+    input_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(input_path):
+        return jsonify({'error': 'File not found'}), 404
+    base, _ = os.path.splitext(filename)
+    output_filename = f"{base}.md"
+    output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+    try:
+        pdf_tools.pdf_to_markdown(input_path, output_path)
+        return jsonify({
+            'output': output_filename,
+            'size': os.path.getsize(output_path)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/get-form-fields', methods=['POST'])
+def api_get_form_fields():
+    data = request.json
+    filename = data.get('filename')
+    input_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(input_path):
+        return jsonify({'error': 'File not found'}), 404
+    try:
+        fields = pdf_tools.get_pdf_form_fields(input_path)
+        return jsonify({'fields': fields})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/fill-form', methods=['POST'])
+def api_fill_form():
+    data = request.json
+    filename = data.get('filename')
+    field_values = data.get('fields', {})
+    input_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(input_path):
+        return jsonify({'error': 'File not found'}), 404
+    output_filename = f"filled_{filename}"
+    output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+    try:
+        pdf_tools.fill_pdf_form(input_path, output_path, field_values)
+        return jsonify({
+            'output': output_filename,
+            'size': os.path.getsize(output_path)
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

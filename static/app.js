@@ -187,6 +187,18 @@ const TOOLS = {
       showResult([{name:data.output,path:data.output,size:data.size,icon:'🏛️'}], {title:'✅ PDF/A Generated'});
     }
   },
+  'pdf-to-md': {
+    title: '📋 PDF to Markdown',
+    desc: 'Extract formatted text, headings, and tables into Markdown (.md).',
+    accept: '.pdf', multi: false,
+    run: async (f) => {
+      showProgress('Converting to Markdown...');
+      const r = await fetch('/api/pdf-to-markdown', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:f[0].path})});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      showResult([{name:data.output,path:data.output,size:data.size,icon:'📋'}], {title:'✅ Converted to Markdown'});
+    }
+  },
   'repair': {
     title: '🛠️ Repair PDF',
     desc: 'Fix corrupted or damaged PDF documents.',
@@ -449,6 +461,83 @@ const TOOLS = {
 
   // ---- EDIT ----
 
+  'pdf-forms': {
+    title: '📋 Fill PDF Forms',
+    desc: 'Detect and fill interactive form fields in your PDF.',
+    accept: '.pdf', multi: false,
+    options: `<div id="pdfFormContainer" style="margin-top:15px;"><p style="color:#888;">Upload a PDF to detect form fields...</p></div>`,
+    onFileLoad: async (f) => {
+      const container = $('#pdfFormContainer');
+      container.innerHTML = '<p style="color:#666;">Scanning PDF for form fields...</p>';
+      try {
+        const resp = await fetch('/api/get-form-fields', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({filename: f[0].path})
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error);
+        
+        if (!data.fields || data.fields.length === 0) {
+          container.innerHTML = `
+            <div style="padding:20px; background:#f9f9f9; border-radius:8px; border:1px solid #ddd; text-align:center;">
+              <p style="font-size:1.1rem; color:#555; margin-bottom:8px;">ℹ️ No interactive fillable fields detected in this PDF.</p>
+              <p style="font-size:0.9rem; color:#888;">If this is a standard document, you can use <b>Edit PDF</b> to add text, signatures, and checkmarks anywhere!</p>
+            </div>`;
+          f[0]._hasFormFields = false;
+          return;
+        }
+
+        f[0]._hasFormFields = true;
+        let html = `<div style="max-height:400px; overflow-y:auto; padding:10px; border:1px solid #eee; border-radius:8px;"><h4 style="margin-bottom:12px;">Detected ${data.fields.length} Field(s):</h4>`;
+        data.fields.forEach((fld, idx) => {
+          const fid = `form_fld_${idx}`;
+          if (fld.type === 'CheckBox') {
+            html += `
+              <div class="form-group" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                <input type="checkbox" id="${fid}" data-name="${fld.name}" ${fld.value && fld.value !== 'Off' ? 'checked' : ''} style="width:20px; height:20px;">
+                <label for="${fid}" style="margin:0; font-weight:600;">${fld.name} (Page ${fld.page})</label>
+              </div>`;
+          } else {
+            html += `
+              <div class="form-group" style="margin-bottom:12px;">
+                <label style="font-weight:600;">${fld.name} <span style="font-size:0.8rem; color:#888;">(Page ${fld.page})</span></label>
+                <input type="text" id="${fid}" data-name="${fld.name}" value="${fld.value || ''}" class="form-control" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+              </div>`;
+          }
+        });
+        html += '</div>';
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = `<p style="color:red;">Error reading fields: ${err.message}</p>`;
+      }
+    },
+    run: async (f) => {
+      if (f[0]._hasFormFields === false) {
+        return toast('This PDF has no fillable fields. Use Edit PDF instead.', 'info');
+      }
+      const fieldInputs = $$('#pdfFormContainer input');
+      const fieldValues = {};
+      fieldInputs.forEach(inp => {
+        const name = inp.getAttribute('data-name');
+        if (inp.type === 'checkbox') {
+          fieldValues[name] = inp.checked;
+        } else {
+          fieldValues[name] = inp.value;
+        }
+      });
+      showProgress('Filling PDF Form...');
+      const resp = await fetch('/api/fill-form', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({filename: f[0].path, fields: fieldValues})
+      });
+      const r = await resp.json();
+      if (!resp.ok) throw new Error(r.error);
+      showResult([{name: r.output, path: r.output, size: r.size, icon: '📋'}], {title: '✅ PDF Form Filled'});
+    }
+  },
+
   'edit-pdf': {
     title: '✏️ Edit PDF',
     desc: 'Add text and images anywhere on your PDF pages.',
@@ -514,7 +603,8 @@ const TOOLS = {
               <span style="width:28px; height:28px; border-radius:50%; background:#fff; border:2px solid #ddd; cursor:pointer;" id="ceColorWhite"></span>
             </div>
             
-            <div style="border-top:1px solid #eee; padding-top:16px; margin-top:auto;">
+            <div style="border-top:1px solid #eee; padding-top:12px; margin-top:auto;">
+              <button class="btn-ghost" id="ceBtnDelete" style="width:100%; border:1px solid #ff4d4f; color:#ff4d4f; margin-bottom:12px; padding:8px; border-radius:6px; font-size:0.85rem; cursor:pointer;">🗑 Delete Selected Text</button>
               <button class="btn-primary" id="runBtn" style="width:100%; margin-top:0; border-radius:8px; background:#E74C3C; padding:14px; font-size:1rem;">Save changes ➜</button>
             </div>
           </div>
@@ -573,6 +663,21 @@ const TOOLS = {
       $('#ceBold')?.addEventListener('click', () => { if(selectedEl) document.execCommand('bold'); });
       $('#ceItalic')?.addEventListener('click', () => { if(selectedEl) document.execCommand('italic'); });
       $('#ceUnderline')?.addEventListener('click', () => { if(selectedEl) document.execCommand('underline'); });
+      $('#ceBtnDelete')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (!selectedEl) return toast('Select a text block to delete first', 'info');
+          const el = selectedEl._data;
+          if (el._isExisting) {
+              el._isModified = true;
+              el.text = '';
+          } else {
+              elements = elements.filter(item => item !== el);
+          }
+          selectedEl.remove();
+          selectedEl = null;
+          f[0]._canvasElements = elements;
+          toast('Text removed', 'info');
+      });
 
       const renderElements = (pageNum) => {
           overlays.innerHTML = '';
@@ -590,7 +695,7 @@ const TOOLS = {
                   div.style.fontSize = (el.fontSize * currentScaleY) + 'px';
                   div.style.color = el.color;
                   div.style.border = '1px solid transparent';
-                  div.style.minWidth = '50px';
+                  div.style.minWidth = '20px';
                   div.style.cursor = 'text';
                   div.style.fontFamily = 'sans-serif';
                   div.style.whiteSpace = 'nowrap';
@@ -598,6 +703,9 @@ const TOOLS = {
                   div.style.borderRadius = '2px';
                   div.style.outline = 'none';
                   
+                  div.onmouseenter = () => { if (document.activeElement !== div) div.style.outline = '1px dashed #1473E6'; };
+                  div.onmouseleave = () => { if (document.activeElement !== div) div.style.outline = 'none'; };
+
                   div.onfocus = () => {
                       div.style.border = '2px solid #1473E6';
                       div.style.boxShadow = '0 0 0 3px rgba(20,115,230,0.2)';
@@ -609,7 +717,10 @@ const TOOLS = {
                       div.style.border = '1px solid transparent';
                       div.style.boxShadow = 'none';
                   };
-                  div.oninput = () => { el.text = div.innerText; };
+                  div.oninput = () => { 
+                      el.text = div.innerText; 
+                      el._isModified = true;
+                  };
                   
                   div.onmousedown = (e) => {
                       if (document.activeElement !== div) {
@@ -646,8 +757,14 @@ const TOOLS = {
               
               div.ondblclick = () => {
                   if(confirm('Delete this element?')) {
-                      elements = elements.filter(e => e !== el);
+                      if (el._isExisting) {
+                          el._isModified = true;
+                          el.text = '';
+                      } else {
+                          elements = elements.filter(e => e !== el);
+                      }
                       div.remove();
+                      selectedEl = null;
                       f[0]._canvasElements = elements;
                   }
               };
@@ -699,6 +816,10 @@ const TOOLS = {
                          elements.push({
                              type: 'text',
                              _isExisting: true,
+                             _isModified: false,
+                             _origText: block.text,
+                             _origBbox: block.bbox,
+                             _originY: block.origin_y,
                              text: block.text,
                              page_num: pageNum - 1,
                              x: block.x,
@@ -764,9 +885,24 @@ const TOOLS = {
     },
     run: async (f) => {
       let elements = f[0]._canvasElements || [];
-      if (elements.length === 0) return toast('No elements added','info');
+      let toApply = elements.filter(el => {
+          if (!el._isExisting) return true;
+          return el._isModified && el.text !== el._origText;
+      }).map(el => {
+          if (el._isExisting) {
+              return {
+                  ...el,
+                  is_modified_existing: true,
+                  orig_bbox: el._origBbox,
+                  origin_y: el._originY
+              };
+          }
+          return el;
+      });
+
+      if (toApply.length === 0) return toast('No changes made to PDF', 'info');
       showProgress('Applying edits...');
-      const resp = await fetch('/api/canvas-edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:f[0].path,elements:elements})});
+      const resp = await fetch('/api/canvas-edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:f[0].path,elements:toApply})});
       const r = await resp.json();
       if (!resp.ok) throw new Error(r.error);
       showResult([{name:r.output,path:r.output,size:r.size,icon:'✏️'}],{title:'✅ PDF Edited'});

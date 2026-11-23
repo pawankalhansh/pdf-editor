@@ -67,29 +67,46 @@ def apply_live_text_edits(input_path, output_path, edits):
 def apply_canvas_edits(input_path, output_path, elements):
     doc = fitz.open(input_path)
     
+    # First, handle redactions for modified existing elements
     for el in elements:
         page_num = el.get("page_num", 0)
+        if page_num < 0 or page_num >= len(doc):
+            continue
+        page = doc[page_num]
+        if el.get("is_modified_existing") and el.get("orig_bbox"):
+            ob = el["orig_bbox"]
+            rect = fitz.Rect(ob[0] - 1, ob[1] - 1, ob[2] + 1, ob[3] + 1)
+            page.add_redact_annot(rect, fill=(1, 1, 1))
+            page.apply_redactions()
+
+    for el in elements:
+        page_num = el.get("page_num", 0)
+        if page_num < 0 or page_num >= len(doc):
+            continue
         page = doc[page_num]
         
         if el["type"] == "text":
-            text = el["text"]
-            x = el["x"]
-            y = el["y"]
+            text = el.get("text", "")
+            if not text:
+                continue
+            x = float(el.get("x", 72))
+            y = float(el.get("y", 72))
             fs = float(el.get("fontSize", 16))
             color = el.get("color", "#000000")
-            c_tuple = (0,0,0)
+            c_tuple = (0, 0, 0)
             if color.startswith("#") and len(color) == 7:
                 c_tuple = (int(color[1:3], 16)/255.0, int(color[3:5], 16)/255.0, int(color[5:7], 16)/255.0)
             
-            page.insert_text(fitz.Point(x, y + fs * 0.8), text, fontsize=fs, fontname="helv", color=c_tuple)
+            baseline_y = float(el.get("origin_y", y + fs * 0.85))
+            page.insert_text(fitz.Point(x, baseline_y), text, fontsize=fs, fontname="helv", color=c_tuple)
         
         elif el["type"] == "image":
             img_path = el.get("image_path")
             if img_path and os.path.exists(img_path):
-                x = el["x"]
-                y = el["y"]
-                w = el["width"]
-                h = el["height"]
+                x = float(el["x"])
+                y = float(el["y"])
+                w = float(el["width"])
+                h = float(el["height"])
                 rect = fitz.Rect(x, y, x + w, y + h)
                 page.insert_image(rect, filename=img_path)
                 
@@ -810,58 +827,115 @@ def edit_metadata(input_path, output_path, metadata_dict):
 
 
 def ocr_pdf(input_path, output_path, lang='eng'):
-    """OCR a scanned PDF to produce a searchable PDF.
+    """OCR a scanned PDF to produce a searchable PDF using pure-Python RapidOCR (with Tesseract fallback)."""
+    import fitz
+    import numpy as np
 
-    Each page is rendered at 300 DPI, run through Tesseract OCR, and
-    then reassembled with the original image plus an invisible text
-    layer for searchability.
-
-    Requires ``pytesseract`` and Tesseract to be installed on the system.
-
-    Args:
-        input_path: Path to the scanned PDF.
-        output_path: Path to save the searchable PDF.
-        lang: Tesseract language code (e.g. 'eng', 'fra', 'deu').
-
-    Raises:
-        RuntimeError: If pytesseract is not installed.
-    """
+    has_rapidocr = False
+    ocr_engine = None
     try:
-        import pytesseract
-    except ImportError:
-        raise RuntimeError('pytesseract not installed')
+        from rapidocr_onnxruntime import RapidOCR
+        ocr_engine = RapidOCR()
+        has_rapidocr = True
+    except Exception:
+        has_rapidocr = False
 
     doc = fitz.open(input_path)
     result_doc = fitz.open()
 
     for page_num in range(len(doc)):
         page = doc[page_num]
-        mat = fitz.Matrix(300 / 72, 300 / 72)
+        mat = fitz.Matrix(150 / 72, 150 / 72)
         pix = page.get_pixmap(matrix=mat)
-        img = Image.frombytes('RGB', [pix.width, pix.height], pix.samples)
 
-        # Get OCR text
-        text = pytesseract.image_to_string(img, lang=lang)
-
-        # Create new page with same dimensions
         new_page = result_doc.new_page(width=page.rect.width, height=page.rect.height)
-
-        # Insert the image as background
         new_page.insert_image(page.rect, pixmap=pix)
 
-        # Overlay the text (invisible, for searchability)
-        if text.strip():
-            new_page.insert_text(
-                fitz.Point(72, 72),
-                text,
-                fontsize=1,
-                color=(1, 1, 1),  # white = invisible
-                overlay=True,
-            )
+        if has_rapidocr and ocr_engine is not None:
+            img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+            if pix.n == 4:
+                img_np = img_np[:, :, :3]
+            results, _ = ocr_engine(img_np)
+            if results:
+                scale_x = page.rect.width / pix.width
+                scale_y = page.rect.height / pix.height
+                for box, text, conf in results:
+                    bx = box[0][0] * scale_x
+                    by = box[0][1] * scale_y
+                    bw = (box[1][0] - box[0][0]) * scale_x
+                    bh = (box[2][1] - box[1][1]) * scale_y
+                    fontsize = max(8, bh * 0.8)
+                    new_page.insert_text(fitz.Point(bx, by + bh), text, fontsize=fontsize, render_mode=3)
+        else:
+            try:
+                import pytesseract
+                from PIL import Image
+                img = Image.frombytes('RGB', [pix.width, pix.height], pix.samples)
+                text = pytesseract.image_to_string(img, lang=lang)
+                if text.strip():
+                    new_page.insert_text(fitz.Point(72, 72), text, fontsize=1, color=(1, 1, 1), overlay=True)
+            except Exception:
+                extracted = page.get_text()
+                if extracted.strip():
+                    new_page.insert_text(fitz.Point(72, 72), extracted, fontsize=1, color=(1, 1, 1), overlay=True)
 
     doc.close()
-    result_doc.save(output_path)
+    result_doc.save(output_path, deflate=True)
     result_doc.close()
+    return output_path
+
+
+def pdf_to_markdown(input_path, output_path):
+    """Convert PDF document into clean Markdown format."""
+    try:
+        import pymupdf4llm
+        md_text = pymupdf4llm.to_markdown(input_path)
+    except Exception:
+        import fitz
+        doc = fitz.open(input_path)
+        md_text = ""
+        for page in doc:
+            md_text += page.get_text() + "\n\n"
+        doc.close()
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(md_text)
+    return output_path
+
+
+def get_pdf_form_fields(input_path):
+    """Extract interactive form fields from a PDF."""
+    import fitz
+    doc = fitz.open(input_path)
+    fields = []
+    for page_idx, page in enumerate(doc):
+        for widget in page.widgets():
+            fields.append({
+                'page': page_idx + 1,
+                'name': widget.field_name or f"field_{len(fields)+1}",
+                'value': widget.field_value or '',
+                'type': widget.field_type_string
+            })
+    doc.close()
+    return fields
+
+
+def fill_pdf_form(input_path, output_path, field_values):
+    """Fill interactive PDF form fields with submitted key-value data."""
+    import fitz
+    doc = fitz.open(input_path)
+    for page in doc:
+        for widget in page.widgets():
+            name = widget.field_name
+            if name in field_values:
+                val = field_values[name]
+                if isinstance(val, bool) or str(val).lower() in ['true', 'false']:
+                    widget.field_value = "Yes" if (val is True or str(val).lower() == 'true') else "Off"
+                else:
+                    widget.field_value = str(val)
+                widget.update()
+    doc.save(output_path, deflate=True)
+    doc.close()
     return output_path
 
 
