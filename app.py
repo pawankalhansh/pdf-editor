@@ -597,11 +597,6 @@ def api_add_page_numbers():
 def api_crop():
     data = request.json
     filename = data.get('filename')
-    left = data.get('left', 0)
-    top = data.get('top', 0)
-    right = data.get('right', 0)
-    bottom = data.get('bottom', 0)
-
     input_path = os.path.join(UPLOAD_FOLDER, filename)
     if not os.path.exists(input_path):
         return jsonify({'error': 'File not found'}), 404
@@ -609,10 +604,36 @@ def api_crop():
     output_name = f"cropped_{filename}"
     output_path = os.path.join(OUTPUT_FOLDER, output_name)
 
+    payload = data.get('payload')
+    left = data.get('left', 0)
+    top = data.get('top', 0)
+    right = data.get('right', 0)
+    bottom = data.get('bottom', 0)
+
     try:
-        pdf_tools.crop_pdf(input_path, output_path, left, top, right, bottom)
+        pdf_tools.crop_pdf(input_path, output_path, left=left, top=top, right=right, bottom=bottom, payload=payload)
         size = os.path.getsize(output_path)
         return jsonify({'output': output_name, 'size': size})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/crop/auto-detect', methods=['POST'])
+def api_crop_auto_detect():
+    data = request.json
+    filename = data.get('filename')
+    page_num = int(data.get('page', 0))
+    input_path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(input_path):
+        return jsonify({'error': 'File not found'}), 404
+    try:
+        import fitz
+        doc = fitz.open(input_path)
+        if page_num < 0 or page_num >= len(doc):
+            page_num = 0
+        norm_box = pdf_tools.detect_content_crop_norm(doc[page_num])
+        doc.close()
+        return jsonify({'crop': norm_box})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

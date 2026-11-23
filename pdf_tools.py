@@ -438,31 +438,106 @@ def add_page_numbers(input_path, output_path, position='bottom-center',
     return output_path
 
 
-def crop_pdf(input_path, output_path, left=0, top=0, right=0, bottom=0):
-    """Crop margins from all pages of a PDF.
+def visual_norm_to_visual_rect(page, norm):
+    """Convert normalized UI box {x, y, w, h} to visual page.rect coordinates."""
+    r = page.rect
+    x0 = max(0.0, min(1.0, float(norm.get("x", 0.0)))) * r.width
+    y0 = max(0.0, min(1.0, float(norm.get("y", 0.0)))) * r.height
+    x1 = max(0.0, min(1.0, float(norm.get("x", 0.0)) + float(norm.get("w", 1.0)))) * r.width
+    y1 = max(0.0, min(1.0, float(norm.get("y", 0.0)) + float(norm.get("h", 1.0)))) * r.height
+    vis = fitz.Rect(x0, y0, x1, y1) & r
+    if vis.is_empty or vis.width < 5 or vis.height < 5:
+        raise ValueError("Crop region is too small or invalid.")
+    return vis
 
-    Values are in points (1 inch = 72 points). Each value specifies how
-    much to trim from that edge.
 
-    Args:
-        input_path: Path to the source PDF.
-        output_path: Path to save the cropped PDF.
-        left: Points to trim from the left edge.
-        top: Points to trim from the top edge.
-        right: Points to trim from the right edge.
-        bottom: Points to trim from the bottom edge.
-    """
-    doc = fitz.open(input_path)
-    for page in doc:
-        rect = page.rect
-        page.set_cropbox(fitz.Rect(
-            rect.x0 + left,
-            rect.y0 + top,
-            rect.x1 - right,
-            rect.y1 - bottom,
-        ))
-    doc.save(output_path)
-    doc.close()
+def detect_content_crop_norm(page, padding_pt=8.0):
+    """Auto-Trim Whitespace helper returning normalized visual coordinates."""
+    union = fitz.Rect()
+    try:
+        for _, bbox in page.get_bboxlog():
+            union |= fitz.Rect(bbox)
+    except Exception:
+        pass
+    if union.is_empty:
+        return {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+    pr = page.rect
+    padded = (union + (-padding_pt, -padding_pt, padding_pt, padding_pt)) & pr
+    return {
+        "x": round(padded.x0 / pr.width, 4),
+        "y": round(padded.y0 / pr.height, 4),
+        "w": round(padded.width / pr.width, 4),
+        "h": round(padded.height / pr.height, 4),
+    }
+
+
+def crop_pdf(input_path, output_path, left=0, top=0, right=0, bottom=0, payload=None):
+    """Crop margins from pages of a PDF with full derotation, normalized coordinates, and multi-mode support."""
+    src = fitz.open(input_path)
+
+    # Build normalized payload if not provided
+    if not payload:
+        first_rect = src[0].rect if len(src) else fitz.Rect(0, 0, 595.28, 841.89)
+        pw, ph = max(1.0, first_rect.width), max(1.0, first_rect.height)
+        norm_x = float(left or 0) / pw
+        norm_y = float(top or 0) / ph
+        norm_w = max(0.05, 1.0 - norm_x - (float(right or 0) / pw))
+        norm_h = max(0.05, 1.0 - norm_y - (float(bottom or 0) / ph))
+        payload = {
+            "mode": "standard",
+            "scope": "all",
+            "default_crop": {"x": norm_x, "y": norm_y, "w": norm_w, "h": norm_h},
+            "page_overrides": {}
+        }
+
+    mode = payload.get("mode", "standard")
+    scope = payload.get("scope", "all")
+    overrides = payload.get("page_overrides", {})
+    default_crop = payload.get("default_crop", {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0})
+    current_idx = int(payload.get("current_page", 0))
+
+    for idx, page in enumerate(src):
+        should_crop = (scope == "all") or (idx == current_idx) or (str(idx) in overrides)
+        if not should_crop:
+            continue
+
+        norm = overrides.get(str(idx), default_crop)
+        vis_rect = visual_norm_to_visual_rect(page, norm)
+
+        if mode == "hard":
+            pr = page.rect
+            outer_bands = [
+                fitz.Rect(0, 0, pr.width, vis_rect.y0),
+                fitz.Rect(0, vis_rect.y1, pr.width, pr.height),
+                fitz.Rect(0, vis_rect.y0, vis_rect.x0, vis_rect.y1),
+                fitz.Rect(vis_rect.x1, vis_rect.y0, pr.width, vis_rect.y1),
+            ]
+            for band in outer_bands:
+                if band.width > 0.5 and band.height > 0.5:
+                    page.add_redact_annot(band, fill=None)
+            page.apply_redactions(
+                images=getattr(fitz, "PDF_REDACT_IMAGE_PIXELS", 2),
+                graphics=getattr(fitz, "PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED", 2),
+            )
+
+        # Map visual rect -> unrotated space -> offset by existing cropbox origin
+        unrot = vis_rect * page.derotation_matrix
+        pos = page.cropbox_position
+        target_box = (unrot + (pos.x, pos.y, pos.x, pos.y)) & page.mediabox
+
+        # Clear conflicting secondary boxes so all viewers/printers obey CropBox
+        for box_key in ("TrimBox", "BleedBox", "ArtBox"):
+            try:
+                src.xref_set_key(page.xref, box_key, "null")
+            except Exception:
+                pass
+
+        page.set_cropbox(target_box)
+        page.set_mediabox(target_box)
+
+    src.save(output_path, garbage=4, deflate=True)
+    src.close()
+    return output_path
     return output_path
 
 

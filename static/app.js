@@ -97,27 +97,28 @@ $$('.tool-card').forEach(card => {
 const showHome = (e) => {
   if (e) e.preventDefault();
   $('#homeView').style.display = 'block';
-  $('#toolsView').style.display = 'none';
+  if ($('#toolsView')) $('#toolsView').style.display = 'none';
   $('#workspace').style.display = 'none';
+  $('#splitWorkspace').style.display = 'none';
+  $('#resultArea').style.display = 'none';
   state.currentTool = null;
   $$('.nav-link').forEach(n => n.classList.remove('active'));
-  $('#navHome')?.classList.add('active');
+  $('#navAllTools')?.classList.add('active');
 };
 
-const showTools = (e) => {
-  if (e) e.preventDefault();
-  $('#homeView').style.display = 'none';
-  $('#toolsView').style.display = 'block';
-  $('#workspace').style.display = 'none';
-  state.currentTool = null;
-  $$('.nav-link').forEach(n => n.classList.remove('active'));
-  $('#navTools')?.classList.add('active');
-};
+$('#backBtn')?.addEventListener('click', showHome);
+$('#brandLogo')?.addEventListener('click', showHome);
+$('#navAllTools')?.addEventListener('click', showHome);
+$('#btnExploreTools')?.addEventListener('click', showHome);
 
-$('#backBtn').addEventListener('click', showTools);
-$('#navHome')?.addEventListener('click', showHome);
-$('#navTools')?.addEventListener('click', showTools);
-$('#btnExploreTools')?.addEventListener('click', showTools);
+$$('.nav-link[data-tool]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    $$('.nav-link').forEach(n => n.classList.remove('active'));
+    link.classList.add('active');
+    openTool(link.dataset.tool);
+  });
+});
 
 // Init
 showHome();
@@ -1024,40 +1025,121 @@ const TOOLS = {
     }
   },
   'crop': {
-    title: '🖼️ Crop PDF',
-    desc: 'Visually trim margins from all pages. Drag the edges of the box on the preview below.',
+    title: '✂️ Crop PDF',
+    desc: 'Visually trim margins from all pages or selected pages with interactive handles.',
     accept: '.pdf', multi: false,
     options: `
-      <div id="cropPreviewBox" style="display:none; position:relative; max-width:100%; margin: 20px auto; overflow:hidden; background:#fff; text-align:center;">
-        <div style="position:relative; display:inline-block;">
-          <img id="cropPreviewImg" style="display:block; max-width:100%; height:auto; pointer-events:none;">
-          <div id="cropBox" style="position:absolute; left:10px; top:10px; right:10px; bottom:10px; border:2px dashed var(--accent); box-shadow:0 0 0 9999px rgba(0,0,0,0.5); cursor:move;">
-             <div class="crop-handle" data-dir="nw" style="position:absolute; top:-5px; left:-5px; width:12px; height:12px; background:var(--accent); cursor:nwse-resize; border-radius:50%;"></div>
-             <div class="crop-handle" data-dir="ne" style="position:absolute; top:-5px; right:-5px; width:12px; height:12px; background:var(--accent); cursor:nesw-resize; border-radius:50%;"></div>
-             <div class="crop-handle" data-dir="sw" style="position:absolute; bottom:-5px; left:-5px; width:12px; height:12px; background:var(--accent); cursor:nesw-resize; border-radius:50%;"></div>
-             <div class="crop-handle" data-dir="se" style="position:absolute; bottom:-5px; right:-5px; width:12px; height:12px; background:var(--accent); cursor:nwse-resize; border-radius:50%;"></div>
+      <div class="crop-workspace" id="cropWorkspace" style="display:none;">
+        <div class="crop-viewport">
+          <div class="crop-toolbar">
+            <button type="button" class="crop-toolbar-btn" id="cropBtnAutoTrim">✨ Auto-Detect Margins</button>
+            <button type="button" class="crop-toolbar-btn" id="cropBtnReset">↺ Reset Selection</button>
+            <span style="color:#aaa; font-size:0.8rem; margin-left:auto;" id="cropPageInfo">Page 1 Preview</span>
+          </div>
+          <div class="crop-stage-container">
+            <div class="crop-stage" id="cropStage">
+              <img id="cropPreviewImg" alt="PDF Page Preview">
+              <div class="crop-box" id="cropBox">
+                <div class="crop-badge" id="cropBadge">0 × 0 pt</div>
+                <div class="crop-handle" data-dir="nw"></div>
+                <div class="crop-handle" data-dir="n"></div>
+                <div class="crop-handle" data-dir="ne"></div>
+                <div class="crop-handle" data-dir="e"></div>
+                <div class="crop-handle" data-dir="se"></div>
+                <div class="crop-handle" data-dir="s"></div>
+                <div class="crop-handle" data-dir="sw"></div>
+                <div class="crop-handle" data-dir="w"></div>
+              </div>
+            </div>
           </div>
         </div>
+        <div class="crop-sidebar">
+          <h3>Crop Settings</h3>
+          <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:14px;">Select the area you want to crop by dragging the handles or setting custom margins.</p>
+          
+          <h4>Apply to</h4>
+          <div class="crop-chip-group" id="cropScopeChips">
+            <button type="button" class="crop-chip active" data-val="all">All Pages</button>
+            <button type="button" class="crop-chip" data-val="first">Current Page Only</button>
+          </div>
+          
+          <h4>Aspect Ratio</h4>
+          <div class="crop-chip-group" id="cropRatioChips">
+            <button type="button" class="crop-chip active" data-ratio="free">Free</button>
+            <button type="button" class="crop-chip" data-ratio="a4">A4</button>
+            <button type="button" class="crop-chip" data-ratio="letter">Letter</button>
+            <button type="button" class="crop-chip" data-ratio="16:9">16:9</button>
+            <button type="button" class="crop-chip" data-ratio="1:1">1:1</button>
+          </div>
+
+          <h4>Margins (Points / pt)</h4>
+          <div class="crop-margins-grid">
+            <div class="crop-input-wrap">
+              <label for="opt-crop-t">Top</label>
+              <input type="number" id="opt-crop-t" value="0" min="0" step="1">
+            </div>
+            <div class="crop-input-wrap">
+              <label for="opt-crop-b">Bottom</label>
+              <input type="number" id="opt-crop-b" value="0" min="0" step="1">
+            </div>
+            <div class="crop-input-wrap">
+              <label for="opt-crop-l">Left</label>
+              <input type="number" id="opt-crop-l" value="0" min="0" step="1">
+            </div>
+            <div class="crop-input-wrap">
+              <label for="opt-crop-r">Right</label>
+              <input type="number" id="opt-crop-r" value="0" min="0" step="1">
+            </div>
+          </div>
+
+          <h4>Crop Mode</h4>
+          <div style="margin-bottom:20px;">
+            <select id="opt-crop-mode" style="width:100%; padding:10px; border-radius:var(--r-sm); border:1px solid #ccc; font-weight:600; font-size:0.9rem;">
+              <option value="standard" selected>Standard (Non-destructive view crop)</option>
+              <option value="hard">Hard Crop (Discard cropped content)</option>
+            </select>
+            <span class="hint" style="display:block; margin-top:4px; font-size:0.75rem; color:#888;">Standard updates viewing boundaries; Hard permanently strips outer elements.</span>
+          </div>
+
+          <button type="button" class="btn-crop-submit" id="runBtn">
+            <span>Crop PDF</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
       </div>
-      <div class="form-row" style="display:none;">
-        <div class="form-group"><label>Left (pt)</label><input type="number" id="opt-crop-l" value="0" min="0"></div>
-        <div class="form-group"><label>Top (pt)</label><input type="number" id="opt-crop-t" value="0" min="0"></div>
-        <div class="form-group"><label>Right (pt)</label><input type="number" id="opt-crop-r" value="0" min="0"></div>
-        <div class="form-group"><label>Bottom (pt)</label><input type="number" id="opt-crop-b" value="0" min="0"></div>
-      </div>`,
-    onFileLoad: (f) => {
-      const box = $('#cropPreviewBox');
+    `,
+    onFileLoad: (files) => {
+      const f = files[0];
+      const uz = $('#uz-main'); if (uz) uz.style.display = 'none';
+      const fl = $('#fl-main'); if (fl) fl.style.display = 'none';
+      const ws = $('#cropWorkspace');
+      if (ws) ws.style.display = 'flex';
+
       const img = $('#cropPreviewImg');
-      img.src = '/api/preview/' + encodeURIComponent(f[0].path);
+      img.src = '/api/preview/' + encodeURIComponent(f.path) + '?t=' + Date.now();
       img.onload = () => {
-         box.style.display = 'block';
-         initCropBox(img, f[0]);
+        window.cropController = new PdfCropController(img, f);
       };
     },
-    run: async (f) => {
-      showProgress('Cropping...');
-      const r = await api('/api/crop',{filename:f[0].path,left:+$('#opt-crop-l').value,top:+$('#opt-crop-t').value,right:+$('#opt-crop-r').value,bottom:+$('#opt-crop-b').value});
-      showResult([{name:r.output,path:r.output,size:r.size,icon:'🖼️'}],{title:'✅ PDF Cropped'});
+    run: async (files) => {
+      const f = files[0];
+      const ctrl = window.cropController;
+      const payload = ctrl ? ctrl.getPayload() : {
+        mode: $('#opt-crop-mode')?.value || 'standard',
+        scope: 'all',
+        default_crop: { x: 0, y: 0, w: 1, h: 1 }
+      };
+      const margins = ctrl ? ctrl.getMarginsPt() : { left: 0, top: 0, right: 0, bottom: 0 };
+      showProgress('Cropping PDF with precision...');
+      const r = await api('/api/crop', {
+        filename: f.path,
+        payload: payload,
+        left: margins.left,
+        top: margins.top,
+        right: margins.right,
+        bottom: margins.bottom
+      });
+      showResult([{ name: r.output, path: r.output, size: r.size, icon: '✂️' }], { title: '✅ PDF Cropped' });
     }
   },
   'delete-pages': {
@@ -1276,9 +1358,15 @@ function openTool(toolId) {
   state.currentTool = toolId;
   state.files = {};
 
+  // Update nav-link active class
+  $$('.nav-link').forEach(n => {
+    if (n.dataset.tool === toolId) n.classList.add('active');
+    else n.classList.remove('active');
+  });
+
   // Hide grids, show workspace
   $('#homeView').style.display = 'none';
-  $('#toolsView').style.display = 'none';
+  if ($('#toolsView')) $('#toolsView').style.display = 'none';
   $('#workspace').style.display = '';
   $('#resultArea').style.display = 'none';
   $('#splitWorkspace').style.display = 'none';
@@ -1617,112 +1705,341 @@ function initSignatureCanvas() {
   $('#sigUndo')?.addEventListener('click', () => { paths.pop(); redraw(); });
 }
 
-// ===== CROP BOX =====
-function initCropBox(img, fileInfo) {
-  const cb = $('#cropBox');
-  // default A4 dimensions
-  let pdfW = 595.28, pdfH = 841.89; 
-  if (fileInfo.page_sizes && fileInfo.page_sizes.length) {
-    pdfW = fileInfo.page_sizes[0].width_in * 72;
-    pdfH = fileInfo.page_sizes[0].height_in * 72;
+// ===== iLovePDF CROP CONTROLLER =====
+class PdfCropController {
+  constructor(img, fileInfo) {
+    this.img = img;
+    this.fileInfo = fileInfo;
+    this.stage = $('#cropStage');
+    this.cropBox = $('#cropBox');
+    this.cropBadge = $('#cropBadge');
+    
+    // Inputs
+    this.inLeft = $('#opt-crop-l');
+    this.inTop = $('#opt-crop-t');
+    this.inRight = $('#opt-crop-r');
+    this.inBottom = $('#opt-crop-b');
+    this.modeSelect = $('#opt-crop-mode');
+    
+    // State
+    this.scope = 'all';
+    this.ratio = null; // null = free
+    this.isDragging = false;
+    this.activeTarget = null; // 'move' or handle direction ('nw', 'n', etc.)
+    this._isInputSyncing = false;
+    
+    // Dimensions in PDF points
+    this.pdfW = 595.28;
+    this.pdfH = 841.89;
+    if (fileInfo && fileInfo.page_sizes && fileInfo.page_sizes.length) {
+      const p0 = fileInfo.page_sizes[0];
+      this.pdfW = p0.width_in ? (p0.width_in * 72) : (p0.width || 595.28);
+      this.pdfH = p0.height_in ? (p0.height_in * 72) : (p0.height || 841.89);
+    }
+    
+    // Normalized crop box: {x, y, w, h} (0.0 to 1.0)
+    // Default to slight inset (5% margin) so handles are instantly visible
+    this.norm = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 };
+    
+    this.initEvents();
+    this.updateView();
   }
   
-  let isDragging = false;
-  let startX, startY, startRect;
-  let activeHandle = null;
-
-  function updateInputs() {
-     const iW = img.offsetWidth;
-     const iH = img.offsetHeight;
-     const scaleX = pdfW / iW;
-     const scaleY = pdfH / iH;
-     
-     const leftPx = parseFloat(cb.style.left || 0);
-     const topPx = parseFloat(cb.style.top || 0);
-     const rightPx = parseFloat(cb.style.right || 0);
-     const bottomPx = parseFloat(cb.style.bottom || 0);
-     
-     $('#opt-crop-l').value = Math.max(0, Math.round(leftPx * scaleX));
-     $('#opt-crop-t').value = Math.max(0, Math.round(topPx * scaleY));
-     $('#opt-crop-r').value = Math.max(0, Math.round(rightPx * scaleX));
-     $('#opt-crop-b').value = Math.max(0, Math.round(bottomPx * scaleY));
-  }
-
-  function onDown(e) {
-     if (e.target.classList.contains('crop-handle')) {
-        activeHandle = e.target.dataset.dir;
-     } else if (e.target === cb) {
-        activeHandle = 'move';
-     } else {
+  initEvents() {
+    // Pointer down on box or handles
+    const onPointerDown = (e) => {
+      const target = e.target;
+      if (target.classList.contains('crop-handle')) {
+        this.activeTarget = target.dataset.dir;
+      } else if (target === this.cropBox || target.closest('#cropBox') === this.cropBox) {
+        if (target === this.cropBadge) return;
+        this.activeTarget = 'move';
+      } else {
         return;
-     }
-     isDragging = true;
-     startX = e.clientX || e.touches?.[0].clientX;
-     startY = e.clientY || e.touches?.[0].clientY;
-     startRect = {
-        l: parseFloat(cb.style.left || 0),
-        t: parseFloat(cb.style.top || 0),
-        r: parseFloat(cb.style.right || 0),
-        b: parseFloat(cb.style.bottom || 0)
-     };
-     e.preventDefault();
+      }
+      
+      this.isDragging = true;
+      this.cropBox.classList.add('is-dragging');
+      
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+      this.startX = clientX;
+      this.startY = clientY;
+      
+      const iW = this.img.offsetWidth;
+      const iH = this.img.offsetHeight;
+      this.startRect = {
+        left: this.norm.x * iW,
+        top: this.norm.y * iH,
+        width: this.norm.w * iW,
+        height: this.norm.h * iH
+      };
+      
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const onPointerMove = (e) => {
+      if (!this.isDragging) return;
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+      const dx = clientX - this.startX;
+      const dy = clientY - this.startY;
+      
+      const iW = this.img.offsetWidth;
+      const iH = this.img.offsetHeight;
+      if (!iW || !iH) return;
+
+      const minW = Math.max(24, iW * 0.05);
+      const minH = Math.max(24, iH * 0.05);
+      
+      let { left, top, width, height } = this.startRect;
+
+      if (this.activeTarget === 'move') {
+        left = Math.max(0, Math.min(iW - width, left + dx));
+        top = Math.max(0, Math.min(iH - height, top + dy));
+      } else {
+        const dir = this.activeTarget;
+        let right = left + width;
+        let bottom = top + height;
+        
+        if (dir.includes('e')) {
+          right = Math.min(iW, Math.max(left + minW, right + dx));
+        }
+        if (dir.includes('w')) {
+          left = Math.max(0, Math.min(right - minW, left + dx));
+        }
+        if (dir.includes('s')) {
+          bottom = Math.min(iH, Math.max(top + minH, bottom + dy));
+        }
+        if (dir.includes('n')) {
+          top = Math.max(0, Math.min(bottom - minH, top + dy));
+        }
+        
+        width = right - left;
+        height = bottom - top;
+        
+        // Aspect ratio locking if configured
+        if (this.ratio) {
+          if (dir === 'e' || dir === 'w') {
+            height = Math.min(iH - top, Math.max(minH, width / this.ratio));
+          } else if (dir === 'n' || dir === 's') {
+            width = Math.min(iW - left, Math.max(minW, height * this.ratio));
+          } else {
+            const targetW = height * this.ratio;
+            if (left + targetW <= iW) {
+              width = targetW;
+            } else {
+              height = width / this.ratio;
+            }
+          }
+        }
+      }
+
+      this.norm = {
+        x: left / iW,
+        y: top / iH,
+        w: width / iW,
+        h: height / iH
+      };
+
+      this.updateView();
+      e.preventDefault();
+    };
+
+    const onPointerUp = () => {
+      if (this.isDragging) {
+        this.isDragging = false;
+        this.activeTarget = null;
+        this.cropBox.classList.remove('is-dragging');
+      }
+    };
+
+    // Attach listeners
+    this.cropBox.addEventListener('mousedown', onPointerDown);
+    this.cropBox.addEventListener('touchstart', onPointerDown, { passive: false });
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('touchend', onPointerUp);
+
+    // Two-way margin input listeners
+    const onInputChange = () => {
+      if (this._isInputSyncing) return;
+      this.onMarginInputChange();
+    };
+    [this.inLeft, this.inTop, this.inRight, this.inBottom].forEach(inp => {
+      if (inp) {
+        inp.addEventListener('input', onInputChange);
+        inp.addEventListener('change', onInputChange);
+      }
+    });
+
+    // Scope chips
+    $$('#cropScopeChips .crop-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        $$('#cropScopeChips .crop-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        this.scope = chip.dataset.val || 'all';
+      });
+    });
+
+    // Ratio chips
+    $$('#cropRatioChips .crop-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        $$('#cropRatioChips .crop-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        const r = chip.dataset.ratio;
+        const isLandscape = this.pdfW > this.pdfH;
+        if (r === 'a4') {
+          this.ratio = isLandscape ? (841.89 / 595.28) : (595.28 / 841.89);
+        } else if (r === 'letter') {
+          this.ratio = isLandscape ? (792 / 612) : (612 / 792);
+        } else if (r === '16:9') {
+          this.ratio = 16 / 9;
+        } else if (r === '1:1') {
+          this.ratio = 1.0;
+        } else {
+          this.ratio = null;
+        }
+        if (this.ratio) this.applyRatio();
+      });
+    });
+
+    // Auto-detect button
+    $('#cropBtnAutoTrim')?.addEventListener('click', async () => {
+      try {
+        toast('Detecting document margins...', 'info');
+        const res = await api('/api/crop/auto-detect', {
+          filename: this.fileInfo.path,
+          page: 0
+        });
+        if (res.crop) {
+          this.norm = {
+            x: Math.max(0, Math.min(0.9, res.crop.x)),
+            y: Math.max(0, Math.min(0.9, res.crop.y)),
+            w: Math.max(0.05, Math.min(1.0, res.crop.w)),
+            h: Math.max(0.05, Math.min(1.0, res.crop.h))
+          };
+          this.updateView();
+          toast('✨ Content boundaries auto-detected!', 'success');
+        }
+      } catch (e) {
+        toast('Auto-detect error: ' + e.message, 'error');
+      }
+    });
+
+    // Reset button
+    $('#cropBtnReset')?.addEventListener('click', () => {
+      this.norm = { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+      this.updateView();
+      toast('Selection reset to full page', 'info');
+    });
+
+    // Responsive window resize
+    window.addEventListener('resize', () => this.updateView());
   }
 
-  function onMove(e) {
-     if (!isDragging) return;
-     const cx = e.clientX || e.touches?.[0].clientX;
-     const cy = e.clientY || e.touches?.[0].clientY;
-     const dx = cx - startX;
-     const dy = cy - startY;
-     
-     const iW = img.offsetWidth;
-     const iH = img.offsetHeight;
-
-     if (activeHandle === 'move') {
-        let newL = startRect.l + dx;
-        let newT = startRect.t + dy;
-        let newR = startRect.r - dx;
-        let newB = startRect.b - dy;
-        
-        // Boundaries
-        if (newL < 0) { newR += newL; newL = 0; }
-        if (newT < 0) { newB += newT; newT = 0; }
-        if (newR < 0) { newL += newR; newR = 0; }
-        if (newB < 0) { newT += newB; newB = 0; }
-        
-        cb.style.left = newL + 'px';
-        cb.style.top = newT + 'px';
-        cb.style.right = newR + 'px';
-        cb.style.bottom = newB + 'px';
-     } else {
-        if (activeHandle.includes('w')) {
-           cb.style.left = Math.max(0, Math.min(iW - parseFloat(cb.style.right) - 20, startRect.l + dx)) + 'px';
-        }
-        if (activeHandle.includes('e')) {
-           cb.style.right = Math.max(0, Math.min(iW - parseFloat(cb.style.left) - 20, startRect.r - dx)) + 'px';
-        }
-        if (activeHandle.includes('n')) {
-           cb.style.top = Math.max(0, Math.min(iH - parseFloat(cb.style.bottom) - 20, startRect.t + dy)) + 'px';
-        }
-        if (activeHandle.includes('s')) {
-           cb.style.bottom = Math.max(0, Math.min(iH - parseFloat(cb.style.top) - 20, startRect.b - dy)) + 'px';
-        }
-     }
-     updateInputs();
+  applyRatio() {
+    if (!this.ratio) return;
+    const currentW = this.norm.w * this.pdfW;
+    const currentH = this.norm.h * this.pdfH;
+    let targetW = currentW;
+    let targetH = currentW / this.ratio;
+    if (targetH > this.pdfH) {
+      targetH = this.pdfH;
+      targetW = targetH * this.ratio;
+    }
+    const normW = Math.min(1.0, targetW / this.pdfW);
+    const normH = Math.min(1.0, targetH / this.pdfH);
+    const normX = Math.min(1.0 - normW, Math.max(0, this.norm.x));
+    const normY = Math.min(1.0 - normH, Math.max(0, this.norm.y));
+    this.norm = { x: normX, y: normY, w: normW, h: normH };
+    this.updateView();
   }
 
-  function onUp() { isDragging = false; activeHandle = null; }
+  onMarginInputChange() {
+    const ml = Math.max(0, parseFloat(this.inLeft?.value) || 0);
+    const mt = Math.max(0, parseFloat(this.inTop?.value) || 0);
+    const mr = Math.max(0, parseFloat(this.inRight?.value) || 0);
+    const mb = Math.max(0, parseFloat(this.inBottom?.value) || 0);
 
-  cb.addEventListener('mousedown', onDown);
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-  cb.addEventListener('touchstart', onDown, {passive:false});
-  document.addEventListener('touchmove', onMove, {passive:false});
-  document.addEventListener('touchend', onUp);
-  
-  // reset box initially
-  cb.style.left = '0px'; cb.style.top = '0px'; cb.style.right = '0px'; cb.style.bottom = '0px';
-  updateInputs();
+    let x = ml / this.pdfW;
+    let y = mt / this.pdfH;
+    let w = 1.0 - (ml + mr) / this.pdfW;
+    let h = 1.0 - (mt + mb) / this.pdfH;
+
+    w = Math.max(0.05, Math.min(1.0, w));
+    h = Math.max(0.05, Math.min(1.0, h));
+    x = Math.max(0, Math.min(1.0 - w, x));
+    y = Math.max(0, Math.min(1.0 - h, y));
+
+    this.norm = { x, y, w, h };
+    this.updateView(true);
+  }
+
+  updateView(skipInputSync = false) {
+    const iW = this.img.offsetWidth;
+    const iH = this.img.offsetHeight;
+    if (!iW || !iH) return;
+
+    const bx = Math.round(this.norm.x * iW);
+    const by = Math.round(this.norm.y * iH);
+    const bw = Math.round(this.norm.w * iW);
+    const bh = Math.round(this.norm.h * iH);
+
+    this.cropBox.style.left = `${bx}px`;
+    this.cropBox.style.top = `${by}px`;
+    this.cropBox.style.width = `${bw}px`;
+    this.cropBox.style.height = `${bh}px`;
+
+    const ptW = Math.round(this.norm.w * this.pdfW);
+    const ptH = Math.round(this.norm.h * this.pdfH);
+    if (this.cropBadge) {
+      this.cropBadge.textContent = `${ptW} × ${ptH} pt`;
+    }
+
+    if (!skipInputSync) {
+      this._isInputSyncing = true;
+      const mLeft = Math.max(0, Math.round(this.norm.x * this.pdfW));
+      const mTop = Math.max(0, Math.round(this.norm.y * this.pdfH));
+      const mRight = Math.max(0, Math.round((1.0 - (this.norm.x + this.norm.w)) * this.pdfW));
+      const mBottom = Math.max(0, Math.round((1.0 - (this.norm.y + this.norm.h)) * this.pdfH));
+
+      if (this.inLeft) this.inLeft.value = mLeft;
+      if (this.inTop) this.inTop.value = mTop;
+      if (this.inRight) this.inRight.value = mRight;
+      if (this.inBottom) this.inBottom.value = mBottom;
+      this._isInputSyncing = false;
+    }
+  }
+
+  getPayload() {
+    return {
+      mode: this.modeSelect?.value || 'standard',
+      scope: this.scope || 'all',
+      default_crop: {
+        x: Math.round(this.norm.x * 10000) / 10000,
+        y: Math.round(this.norm.y * 10000) / 10000,
+        w: Math.round(this.norm.w * 10000) / 10000,
+        h: Math.round(this.norm.h * 10000) / 10000
+      },
+      current_page: 0
+    };
+  }
+
+  getMarginsPt() {
+    return {
+      left: Math.max(0, Math.round(this.norm.x * this.pdfW)),
+      top: Math.max(0, Math.round(this.norm.y * this.pdfH)),
+      right: Math.max(0, Math.round((1.0 - (this.norm.x + this.norm.w)) * this.pdfW)),
+      bottom: Math.max(0, Math.round((1.0 - (this.norm.y + this.norm.h)) * this.pdfH))
+    };
+  }
+}
+
+function initCropBox(img, fileInfo) {
+  return new PdfCropController(img, fileInfo);
 }
 
 console.log('🎨 PDF Editor Pro loaded — 20+ tools ready');
