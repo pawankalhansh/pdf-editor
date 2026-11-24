@@ -1034,7 +1034,8 @@ const TOOLS = {
           <div class="crop-toolbar">
             <button type="button" class="crop-toolbar-btn" id="cropBtnAutoTrim">✨ Auto-Detect Margins</button>
             <button type="button" class="crop-toolbar-btn" id="cropBtnReset">↺ Reset Selection</button>
-            <span style="color:#aaa; font-size:0.8rem; margin-left:auto;" id="cropPageInfo">Page 1 Preview</span>
+            <button type="button" class="crop-toolbar-btn" id="cropBtnChangeFile">📁 Change File</button>
+            <span style="color:#bbb; font-size:0.85rem; margin-left:auto; font-weight:500;" id="cropPageInfo">Page 1 Preview</span>
           </div>
           <div class="crop-stage-container">
             <div class="crop-stage" id="cropStage">
@@ -1112,14 +1113,41 @@ const TOOLS = {
       const f = files[0];
       const uz = $('#uz-main'); if (uz) uz.style.display = 'none';
       const fl = $('#fl-main'); if (fl) fl.style.display = 'none';
+      const tg = $('#tg-main'); if (tg) tg.style.display = 'none';
       const ws = $('#cropWorkspace');
       if (ws) ws.style.display = 'flex';
 
+      const opts = $('#opts-section');
+      if (opts) {
+        opts.classList.add('visible');
+        opts.style.marginTop = '0';
+        opts.style.borderTop = 'none';
+        opts.style.paddingTop = '0';
+      }
+
+      const pageInfo = $('#cropPageInfo');
+      if (pageInfo) {
+        pageInfo.textContent = f.pages ? `Page 1 of ${f.pages} Preview` : 'Page 1 Preview';
+      }
+
+      if (window.cropController && typeof window.cropController.destroy === 'function') {
+        window.cropController.destroy();
+      }
+
       const img = $('#cropPreviewImg');
-      img.src = '/api/preview/' + encodeURIComponent(f.path) + '?t=' + Date.now();
-      img.onload = () => {
+      const initCtrl = () => {
         window.cropController = new PdfCropController(img, f);
       };
+
+      img.onload = initCtrl;
+      img.src = '/api/preview/' + encodeURIComponent(f.path) + '?t=' + Date.now();
+      if (img.complete && img.naturalWidth > 0) {
+        initCtrl();
+      }
+
+      $('#cropBtnChangeFile')?.addEventListener('click', () => {
+        $('#fi-main')?.click();
+      });
     },
     run: async (files) => {
       const f = files[0];
@@ -1731,10 +1759,14 @@ class PdfCropController {
     // Dimensions in PDF points
     this.pdfW = 595.28;
     this.pdfH = 841.89;
-    if (fileInfo && fileInfo.page_sizes && fileInfo.page_sizes.length) {
+    if (this.img.naturalWidth && this.img.naturalHeight) {
+      // /api/preview renders at 1.5x scale (108 DPI: 1 pt = 1.5 px)
+      this.pdfW = Math.round(this.img.naturalWidth / 1.5);
+      this.pdfH = Math.round(this.img.naturalHeight / 1.5);
+    } else if (fileInfo && fileInfo.page_sizes && fileInfo.page_sizes.length) {
       const p0 = fileInfo.page_sizes[0];
-      this.pdfW = p0.width_in ? (p0.width_in * 72) : (p0.width || 595.28);
-      this.pdfH = p0.height_in ? (p0.height_in * 72) : (p0.height || 841.89);
+      this.pdfW = p0.width_in ? Math.round(p0.width_in * 72) : (p0.width ? Math.round(p0.width / 25.4 * 72) : 595.28);
+      this.pdfH = p0.height_in ? Math.round(p0.height_in * 72) : (p0.height ? Math.round(p0.height / 25.4 * 72) : 841.89);
     }
     
     // Normalized crop box: {x, y, w, h} (0.0 to 1.0)
@@ -1742,7 +1774,8 @@ class PdfCropController {
     this.norm = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 };
     
     this.initEvents();
-    this.updateView();
+    requestAnimationFrame(() => this.updateView());
+    setTimeout(() => this.updateView(), 60);
   }
   
   initEvents() {
@@ -1760,9 +1793,22 @@ class PdfCropController {
       
       this.isDragging = true;
       this.cropBox.classList.add('is-dragging');
+      document.body.style.userSelect = 'none';
       
-      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+      if (this.activeTarget === 'move') {
+        document.body.style.cursor = 'move';
+      } else if (this.activeTarget) {
+        const cursorMap = {
+          nw: 'nwse-resize', se: 'nwse-resize',
+          ne: 'nesw-resize', sw: 'nesw-resize',
+          n: 'ns-resize', s: 'ns-resize',
+          e: 'ew-resize', w: 'ew-resize'
+        };
+        document.body.style.cursor = cursorMap[this.activeTarget] || 'default';
+      }
+      
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
       this.startX = clientX;
       this.startY = clientY;
       
@@ -1781,8 +1827,8 @@ class PdfCropController {
 
     const onPointerMove = (e) => {
       if (!this.isDragging) return;
-      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
       const dx = clientX - this.startX;
       const dy = clientY - this.startY;
       
@@ -1790,50 +1836,124 @@ class PdfCropController {
       const iH = this.img.offsetHeight;
       if (!iW || !iH) return;
 
-      const minW = Math.max(24, iW * 0.05);
-      const minH = Math.max(24, iH * 0.05);
+      const minW = Math.max(20, iW * 0.03);
+      const minH = Math.max(20, iH * 0.03);
       
-      let { left, top, width, height } = this.startRect;
+      let left = this.startRect.left;
+      let top = this.startRect.top;
+      let width = this.startRect.width;
+      let height = this.startRect.height;
 
       if (this.activeTarget === 'move') {
-        left = Math.max(0, Math.min(iW - width, left + dx));
-        top = Math.max(0, Math.min(iH - height, top + dy));
+        left = Math.max(0, Math.min(iW - width, this.startRect.left + dx));
+        top = Math.max(0, Math.min(iH - height, this.startRect.top + dy));
       } else {
         const dir = this.activeTarget;
-        let right = left + width;
-        let bottom = top + height;
-        
-        if (dir.includes('e')) {
-          right = Math.min(iW, Math.max(left + minW, right + dx));
-        }
-        if (dir.includes('w')) {
-          left = Math.max(0, Math.min(right - minW, left + dx));
-        }
-        if (dir.includes('s')) {
-          bottom = Math.min(iH, Math.max(top + minH, bottom + dy));
-        }
-        if (dir.includes('n')) {
-          top = Math.max(0, Math.min(bottom - minH, top + dy));
-        }
-        
-        width = right - left;
-        height = bottom - top;
-        
-        // Aspect ratio locking if configured
+        const startL = this.startRect.left;
+        const startT = this.startRect.top;
+        const startR = startL + this.startRect.width;
+        const startB = startT + this.startRect.height;
+
+        let newL = startL;
+        let newR = startR;
+        let newT = startT;
+        let newB = startB;
+
+        // Raw handle movements
+        if (dir.includes('e')) newR = Math.min(iW, Math.max(startL + minW, startR + dx));
+        if (dir.includes('w')) newL = Math.max(0, Math.min(startR - minW, startL + dx));
+        if (dir.includes('s')) newB = Math.min(iH, Math.max(startT + minH, startB + dy));
+        if (dir.includes('n')) newT = Math.max(0, Math.min(startB - minH, startT + dy));
+
+        let curW = newR - newL;
+        let curH = newB - newT;
+
+        // Apply aspect ratio constraints
         if (this.ratio) {
+          const ratio = this.ratio;
           if (dir === 'e' || dir === 'w') {
-            height = Math.min(iH - top, Math.max(minH, width / this.ratio));
+            let h = curW / ratio;
+            if (h > iH) { h = iH; curW = h * ratio; }
+            const centerY = startT + this.startRect.height / 2;
+            newT = Math.max(0, Math.min(iH - h, centerY - h / 2));
+            newB = newT + h;
+            if (dir === 'e') newR = newL + curW;
+            else newL = newR - curW;
           } else if (dir === 'n' || dir === 's') {
-            width = Math.min(iW - left, Math.max(minW, height * this.ratio));
-          } else {
-            const targetW = height * this.ratio;
-            if (left + targetW <= iW) {
-              width = targetW;
-            } else {
-              height = width / this.ratio;
+            let w = curH * ratio;
+            if (w > iW) { w = iW; curH = w / ratio; }
+            const centerX = startL + this.startRect.width / 2;
+            newL = Math.max(0, Math.min(iW - w, centerX - w / 2));
+            newR = newL + w;
+            if (dir === 's') newB = newT + curH;
+            else newT = newB - curH;
+          } else if (dir === 'se') {
+            let w = curW;
+            let h = w / ratio;
+            if (h > iH - startT) {
+              h = iH - startT;
+              w = h * ratio;
             }
+            if (w > iW - startL) {
+              w = iW - startL;
+              h = w / ratio;
+            }
+            newL = startL;
+            newT = startT;
+            newR = startL + Math.max(minW, w);
+            newB = startT + Math.max(minH, h);
+          } else if (dir === 'sw') {
+            let w = curW;
+            let h = w / ratio;
+            if (h > iH - startT) {
+              h = iH - startT;
+              w = h * ratio;
+            }
+            if (w > startR) {
+              w = startR;
+              h = w / ratio;
+            }
+            newR = startR;
+            newT = startT;
+            newL = startR - Math.max(minW, w);
+            newB = startT + Math.max(minH, h);
+          } else if (dir === 'ne') {
+            let w = curW;
+            let h = w / ratio;
+            if (h > startB) {
+              h = startB;
+              w = h * ratio;
+            }
+            if (w > iW - startL) {
+              w = iW - startL;
+              h = w / ratio;
+            }
+            newL = startL;
+            newB = startB;
+            newR = startL + Math.max(minW, w);
+            newT = startB - Math.max(minH, h);
+          } else if (dir === 'nw') {
+            let w = curW;
+            let h = w / ratio;
+            if (h > startB) {
+              h = startB;
+              w = h * ratio;
+            }
+            if (w > startR) {
+              w = startR;
+              h = w / ratio;
+            }
+            newR = startR;
+            newB = startB;
+            newL = startR - Math.max(minW, w);
+            newT = startB - Math.max(minH, h);
           }
         }
+
+        left = Math.max(0, newL);
+        top = Math.max(0, newT);
+        width = Math.min(iW - left, newR - newL);
+        height = Math.min(iH - top, newB - newT);
       }
 
       this.norm = {
@@ -1852,8 +1972,15 @@ class PdfCropController {
         this.isDragging = false;
         this.activeTarget = null;
         this.cropBox.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
       }
     };
+
+    this._onPointerDown = onPointerDown;
+    this._onPointerMove = onPointerMove;
+    this._onPointerUp = onPointerUp;
+    this._onResize = () => this.updateView();
 
     // Attach listeners
     this.cropBox.addEventListener('mousedown', onPointerDown);
@@ -1868,10 +1995,15 @@ class PdfCropController {
       if (this._isInputSyncing) return;
       this.onMarginInputChange();
     };
+    const onInputBlur = () => {
+      this.onMarginInputChange();
+      this.updateView(false);
+    };
     [this.inLeft, this.inTop, this.inRight, this.inBottom].forEach(inp => {
       if (inp) {
         inp.addEventListener('input', onInputChange);
         inp.addEventListener('change', onInputChange);
+        inp.addEventListener('blur', onInputBlur);
       }
     });
 
@@ -1915,6 +2047,10 @@ class PdfCropController {
           page: 0
         });
         if (res.crop) {
+          this.ratio = null;
+          $$('#cropRatioChips .crop-chip').forEach(c => {
+            c.classList.toggle('active', c.dataset.ratio === 'free');
+          });
           this.norm = {
             x: Math.max(0, Math.min(0.9, res.crop.x)),
             y: Math.max(0, Math.min(0.9, res.crop.y)),
@@ -1923,6 +2059,8 @@ class PdfCropController {
           };
           this.updateView();
           toast('✨ Content boundaries auto-detected!', 'success');
+        } else {
+          toast('Could not detect margins automatically', 'info');
         }
       } catch (e) {
         toast('Auto-detect error: ' + e.message, 'error');
@@ -1932,12 +2070,26 @@ class PdfCropController {
     // Reset button
     $('#cropBtnReset')?.addEventListener('click', () => {
       this.norm = { x: 0.0, y: 0.0, w: 1.0, h: 1.0 };
+      this.ratio = null;
+      $$('#cropRatioChips .crop-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.ratio === 'free');
+      });
       this.updateView();
       toast('Selection reset to full page', 'info');
     });
 
     // Responsive window resize
-    window.addEventListener('resize', () => this.updateView());
+    window.addEventListener('resize', this._onResize);
+  }
+
+  destroy() {
+    window.removeEventListener('mousemove', this._onPointerMove);
+    window.removeEventListener('touchmove', this._onPointerMove);
+    window.removeEventListener('mouseup', this._onPointerUp);
+    window.removeEventListener('touchend', this._onPointerUp);
+    window.removeEventListener('resize', this._onResize);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
   }
 
   applyRatio() {
@@ -1950,10 +2102,21 @@ class PdfCropController {
       targetH = this.pdfH;
       targetW = targetH * this.ratio;
     }
+    if (targetW > this.pdfW) {
+      targetW = this.pdfW;
+      targetH = targetW / this.ratio;
+    }
     const normW = Math.min(1.0, targetW / this.pdfW);
     const normH = Math.min(1.0, targetH / this.pdfH);
-    const normX = Math.min(1.0 - normW, Math.max(0, this.norm.x));
-    const normY = Math.min(1.0 - normH, Math.max(0, this.norm.y));
+    
+    // Center around current center point
+    const centerX = this.norm.x + this.norm.w / 2;
+    const centerY = this.norm.y + this.norm.h / 2;
+    let normX = centerX - normW / 2;
+    let normY = centerY - normH / 2;
+    normX = Math.max(0.0, Math.min(1.0 - normW, normX));
+    normY = Math.max(0.0, Math.min(1.0 - normH, normY));
+
     this.norm = { x: normX, y: normY, w: normW, h: normH };
     this.updateView();
   }
@@ -1969,10 +2132,18 @@ class PdfCropController {
     let w = 1.0 - (ml + mr) / this.pdfW;
     let h = 1.0 - (mt + mb) / this.pdfH;
 
-    w = Math.max(0.05, Math.min(1.0, w));
-    h = Math.max(0.05, Math.min(1.0, h));
+    w = Math.max(0.03, Math.min(1.0, w));
+    h = Math.max(0.03, Math.min(1.0, h));
     x = Math.max(0, Math.min(1.0 - w, x));
     y = Math.max(0, Math.min(1.0 - h, y));
+
+    // Clear active ratio chip since manual margins were explicitly entered
+    if (this.ratio) {
+      this.ratio = null;
+      $$('#cropRatioChips .crop-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.ratio === 'free');
+      });
+    }
 
     this.norm = { x, y, w, h };
     this.updateView(true);
@@ -1981,7 +2152,15 @@ class PdfCropController {
   updateView(skipInputSync = false) {
     const iW = this.img.offsetWidth;
     const iH = this.img.offsetHeight;
-    if (!iW || !iH) return;
+    if (!iW || !iH) {
+      requestAnimationFrame(() => this.updateView(skipInputSync));
+      return;
+    }
+
+    this.norm.w = Math.max(0.02, Math.min(1.0, this.norm.w));
+    this.norm.h = Math.max(0.02, Math.min(1.0, this.norm.h));
+    this.norm.x = Math.max(0.0, Math.min(1.0 - this.norm.w, this.norm.x));
+    this.norm.y = Math.max(0.0, Math.min(1.0 - this.norm.h, this.norm.y));
 
     const bx = Math.round(this.norm.x * iW);
     const by = Math.round(this.norm.y * iH);
@@ -1997,6 +2176,11 @@ class PdfCropController {
     const ptH = Math.round(this.norm.h * this.pdfH);
     if (this.cropBadge) {
       this.cropBadge.textContent = `${ptW} × ${ptH} pt`;
+      if (bh < 48) {
+        this.cropBadge.style.top = by > 30 ? '-26px' : '4px';
+      } else {
+        this.cropBadge.style.top = '8px';
+      }
     }
 
     if (!skipInputSync) {

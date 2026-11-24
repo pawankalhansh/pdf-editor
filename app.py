@@ -595,8 +595,10 @@ def api_add_page_numbers():
 
 @app.route('/api/crop', methods=['POST'])
 def api_crop():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     filename = data.get('filename')
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
     input_path = os.path.join(UPLOAD_FOLDER, filename)
     if not os.path.exists(input_path):
         return jsonify({'error': 'File not found'}), 404
@@ -620,8 +622,10 @@ def api_crop():
 
 @app.route('/api/crop/auto-detect', methods=['POST'])
 def api_crop_auto_detect():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     filename = data.get('filename')
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
     page_num = int(data.get('page', 0))
     input_path = os.path.join(UPLOAD_FOLDER, filename)
     if not os.path.exists(input_path):

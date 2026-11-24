@@ -441,10 +441,21 @@ def add_page_numbers(input_path, output_path, position='bottom-center',
 def visual_norm_to_visual_rect(page, norm):
     """Convert normalized UI box {x, y, w, h} to visual page.rect coordinates."""
     r = page.rect
-    x0 = max(0.0, min(1.0, float(norm.get("x", 0.0)))) * r.width
-    y0 = max(0.0, min(1.0, float(norm.get("y", 0.0)))) * r.height
-    x1 = max(0.0, min(1.0, float(norm.get("x", 0.0)) + float(norm.get("w", 1.0)))) * r.width
-    y1 = max(0.0, min(1.0, float(norm.get("y", 0.0)) + float(norm.get("h", 1.0)))) * r.height
+    nx = float(norm.get("x", 0.0))
+    ny = float(norm.get("y", 0.0))
+    nw = float(norm.get("w", 1.0))
+    nh = float(norm.get("h", 1.0))
+
+    nx0 = max(0.0, min(1.0, nx))
+    ny0 = max(0.0, min(1.0, ny))
+    nx1 = max(nx0, min(1.0, nx + nw))
+    ny1 = max(ny0, min(1.0, ny + nh))
+
+    x0 = r.x0 + nx0 * r.width
+    y0 = r.y0 + ny0 * r.height
+    x1 = r.x0 + nx1 * r.width
+    y1 = r.y0 + ny1 * r.height
+
     vis = fitz.Rect(x0, y0, x1, y1) & r
     if vis.is_empty or vis.width < 5 or vis.height < 5:
         raise ValueError("Crop region is too small or invalid.")
@@ -459,85 +470,126 @@ def detect_content_crop_norm(page, padding_pt=8.0):
             union |= fitz.Rect(bbox)
     except Exception:
         pass
+
+    if union.is_empty:
+        try:
+            for block in page.get_text("blocks"):
+                union |= fitz.Rect(block[:4])
+            for d in page.get_drawings():
+                if "rect" in d:
+                    union |= fitz.Rect(d["rect"])
+        except Exception:
+            pass
+
+    pr = page.rect
     if union.is_empty:
         return {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
-    pr = page.rect
+
+    union = union & pr
+    if union.is_empty or union.width < 5 or union.height < 5:
+        return {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0}
+
     padded = (union + (-padding_pt, -padding_pt, padding_pt, padding_pt)) & pr
     return {
-        "x": round(padded.x0 / pr.width, 4),
-        "y": round(padded.y0 / pr.height, 4),
-        "w": round(padded.width / pr.width, 4),
-        "h": round(padded.height / pr.height, 4),
+        "x": max(0.0, min(1.0, round((padded.x0 - pr.x0) / pr.width, 4))),
+        "y": max(0.0, min(1.0, round((padded.y0 - pr.y0) / pr.height, 4))),
+        "w": max(0.05, min(1.0, round(padded.width / pr.width, 4))),
+        "h": max(0.05, min(1.0, round(padded.height / pr.height, 4))),
     }
 
 
 def crop_pdf(input_path, output_path, left=0, top=0, right=0, bottom=0, payload=None):
-    """Crop margins from pages of a PDF with full derotation, normalized coordinates, and multi-mode support."""
+    """Crop margins from pages of a PDF using clean page clipping.
+
+    Creates a fresh output document where each page is created with the exact dimensions
+    of the clipped region (vis_rect.width, vis_rect.height), and content is drawn via
+    new_page.show_pdf_page(new_page.rect, src, idx, clip=vis_rect).
+
+    This guarantees MediaBox == CropBox == Rect(0, 0, width, height) in the output,
+    eliminating all ValueError: CropBox not in MediaBox and PDFium/PDF.js coordinate misalignment bugs.
+    Supports both normalized payload ({mode, scope, default_crop, page_overrides})
+    and point margins (left, top, right, bottom).
+    """
     src = fitz.open(input_path)
+    out_doc = fitz.open()
 
-    # Build normalized payload if not provided
-    if not payload:
-        first_rect = src[0].rect if len(src) else fitz.Rect(0, 0, 595.28, 841.89)
-        pw, ph = max(1.0, first_rect.width), max(1.0, first_rect.height)
-        norm_x = float(left or 0) / pw
-        norm_y = float(top or 0) / ph
-        norm_w = max(0.05, 1.0 - norm_x - (float(right or 0) / pw))
-        norm_h = max(0.05, 1.0 - norm_y - (float(bottom or 0) / ph))
-        payload = {
-            "mode": "standard",
-            "scope": "all",
-            "default_crop": {"x": norm_x, "y": norm_y, "w": norm_w, "h": norm_h},
-            "page_overrides": {}
-        }
+    has_payload = bool(payload and isinstance(payload, dict))
+    mode = payload.get("mode", "standard") if has_payload else "standard"
+    scope = payload.get("scope", "all") if has_payload else "all"
+    overrides = payload.get("page_overrides", {}) if has_payload else {}
+    if not isinstance(overrides, dict):
+        overrides = {}
+    default_crop = payload.get("default_crop") if has_payload else None
+    current_idx = int(payload.get("current_page", 0)) if has_payload else 0
 
-    mode = payload.get("mode", "standard")
-    scope = payload.get("scope", "all")
-    overrides = payload.get("page_overrides", {})
-    default_crop = payload.get("default_crop", {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0})
-    current_idx = int(payload.get("current_page", 0))
+    num_pages = len(src)
+    crop_targets = []
 
-    for idx, page in enumerate(src):
-        should_crop = (scope == "all") or (idx == current_idx) or (str(idx) in overrides)
-        if not should_crop:
-            continue
+    # Pass 1: calculate target crop rectangle for every page
+    for idx in range(num_pages):
+        page = src[idx]
+        is_current_only = (scope in ("first", "current"))
+        should_crop = (scope == "all") or (is_current_only and idx == current_idx) or (str(idx) in overrides)
 
-        norm = overrides.get(str(idx), default_crop)
-        vis_rect = visual_norm_to_visual_rect(page, norm)
+        if should_crop:
+            if has_payload and (overrides.get(str(idx)) or default_crop):
+                norm = overrides.get(str(idx), default_crop)
+                vis_rect = visual_norm_to_visual_rect(page, norm)
+            else:
+                # Point margins mode
+                pr = page.rect
+                l_pt = float(left or 0)
+                t_pt = float(top or 0)
+                r_pt = float(right or 0)
+                b_pt = float(bottom or 0)
+                x0 = pr.x0 + l_pt
+                y0 = pr.y0 + t_pt
+                x1 = pr.x1 - r_pt
+                y1 = pr.y1 - b_pt
+                vis_rect = fitz.Rect(x0, y0, x1, y1) & pr
+                if vis_rect.is_empty or vis_rect.width < 5 or vis_rect.height < 5:
+                    raise ValueError(f"Crop region on page {idx+1} is too small or invalid.")
+        else:
+            vis_rect = page.rect
 
-        if mode == "hard":
-            pr = page.rect
-            outer_bands = [
-                fitz.Rect(0, 0, pr.width, vis_rect.y0),
-                fitz.Rect(0, vis_rect.y1, pr.width, pr.height),
-                fitz.Rect(0, vis_rect.y0, vis_rect.x0, vis_rect.y1),
-                fitz.Rect(vis_rect.x1, vis_rect.y0, pr.width, vis_rect.y1),
-            ]
-            for band in outer_bands:
-                if band.width > 0.5 and band.height > 0.5:
-                    page.add_redact_annot(band, fill=None)
-            page.apply_redactions(
-                images=getattr(fitz, "PDF_REDACT_IMAGE_PIXELS", 2),
-                graphics=getattr(fitz, "PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED", 2),
-            )
+        crop_targets.append((should_crop, vis_rect))
 
-        # Map visual rect -> unrotated space -> offset by existing cropbox origin
-        unrot = vis_rect * page.derotation_matrix
-        pos = page.cropbox_position
-        target_box = (unrot + (pos.x, pos.y, pos.x, pos.y)) & page.mediabox
+    # In "hard" mode, apply all redactions on src before clipping pages to avoid graft map desync
+    if mode == "hard":
+        for idx in range(num_pages):
+            should_crop, vis_rect = crop_targets[idx]
+            if should_crop:
+                page = src[idx]
+                pr = page.rect
+                outer_bands = [
+                    fitz.Rect(pr.x0, pr.y0, pr.x1, vis_rect.y0),
+                    fitz.Rect(pr.x0, vis_rect.y1, pr.x1, pr.y1),
+                    fitz.Rect(pr.x0, vis_rect.y0, vis_rect.x0, vis_rect.y1),
+                    fitz.Rect(vis_rect.x1, vis_rect.y0, pr.x1, vis_rect.y1),
+                ]
+                for band in outer_bands:
+                    if band.width > 0.5 and band.height > 0.5:
+                        page.add_redact_annot(band, fill=None)
+                page.apply_redactions(
+                    images=getattr(fitz, "PDF_REDACT_IMAGE_PIXELS", 2),
+                    graphics=getattr(fitz, "PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED", 2),
+                )
 
-        # Clear conflicting secondary boxes so all viewers/printers obey CropBox
-        for box_key in ("TrimBox", "BleedBox", "ArtBox"):
-            try:
-                src.xref_set_key(page.xref, box_key, "null")
-            except Exception:
-                pass
+    # Pass 2: Clean page clipping into fresh output document
+    for idx in range(num_pages):
+        _, vis_rect = crop_targets[idx]
+        new_page = out_doc.new_page(width=vis_rect.width, height=vis_rect.height)
+        new_page.show_pdf_page(new_page.rect, src, idx, clip=vis_rect)
 
-        page.set_cropbox(target_box)
-        page.set_mediabox(target_box)
+    try:
+        if src.metadata:
+            out_doc.set_metadata(src.metadata)
+    except Exception:
+        pass
 
-    src.save(output_path, garbage=4, deflate=True)
+    out_doc.save(output_path, garbage=4, deflate=True)
+    out_doc.close()
     src.close()
-    return output_path
     return output_path
 
 
